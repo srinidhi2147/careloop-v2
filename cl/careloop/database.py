@@ -1,9 +1,15 @@
-"""SQLite access. One short-lived connection per operation keeps threads and async simple."""
+"""SQLite access. One short-lived connection per operation keeps threads and async simple.
+
+Each browser gets its own database file (see session.py), so visitors never see each other's data.
+"""
 from __future__ import annotations
 
+import os
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS medications(
@@ -33,16 +39,31 @@ CREATE TABLE IF NOT EXISTS alerts(
 CREATE INDEX IF NOT EXISTS idx_medications_time ON medications(time);
 """
 
+# Set per request by SessionMiddleware. None means "use the default database".
+current_session: ContextVar[str | None] = ContextVar("current_session", default=None)
+SESSION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+
 
 class Database:
     def __init__(self, path: str) -> None:
         self.path = path
 
+    def _path_for_session(self) -> str:
+        sid = current_session.get()
+        if not sid or not SESSION_ID_RE.fullmatch(sid):
+            return self.path
+        folder = os.path.join(os.path.dirname(os.path.abspath(self.path)), "sessions")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, f"{sid}.db")
+
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        path = self._path_for_session()
+        conn = sqlite3.connect(path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        if path != self.path:
+            conn.executescript(SCHEMA)  # safe to repeat: every statement is IF NOT EXISTS
         try:
             yield conn
             conn.commit()

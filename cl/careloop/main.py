@@ -19,6 +19,7 @@ from .repositories import (
     MedicationRepository,
 )
 from .services import CareService
+from .session import SessionMiddleware
 
 
 def create(settings: Settings | None = None) -> FastAPI:
@@ -37,4 +38,6 @@ def create(settings: Settings | None = None) -> FastAPI:
     )
     if settings.seed_demo:
         service.seed_demo_data()
-    return create_app(service, reader, settings, mcp=build_mcp(service, settings))
+    app = create_app(service, reader, settings, mcp=build_mcp(service, settings))
+    app.add_middleware(SessionMiddleware)
+    return app
