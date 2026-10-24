@@ -8,6 +8,7 @@ import re
 from typing import Any, Protocol
 
 from .config import Settings
+from .dosing import times_from_text
 from .frequency import TIME_RE, times_from_frequency
 from .models import ExtractedMedicine
 
@@ -64,9 +65,16 @@ def parse_model_output(raw: str) -> list[ExtractedMedicine]:
             continue
         name = str(item.get("name") or item.get("medicine") or "").strip()
         frequency = str(item.get("frequency") or item.get("timing") or "").strip()
+        notes = str(item.get("instructions", "")).strip()
         raw_times = item.get("times") if isinstance(item.get("times"), list) else []
         explicit = [str(t) for t in raw_times if TIME_RE.fullmatch(str(t))]
-        times = explicit or times_from_frequency(frequency)
+        times = (
+            explicit
+            or times_from_frequency(frequency)
+            or times_from_text(frequency)
+            or times_from_text(notes)
+        )
+        log.info("read medicine %r: frequency=%r times=%s", name, frequency, times)
         try:
             confidence = max(0.0, min(1.0, float(item.get("confidence", 0))))
         except (TypeError, ValueError):
@@ -76,9 +84,9 @@ def parse_model_output(raw: str) -> list[ExtractedMedicine]:
             strength=str(item.get("strength", "")).strip(),
             frequency=frequency,
             times=times,
-            instructions=str(item.get("instructions", "")).strip(),
+            instructions=notes,
             confidence=confidence,
-            needs_review=confidence < 0.8 or not name or not times,
+            needs_review=confidence < 0.8 or not name,
         ))
     return out
 
