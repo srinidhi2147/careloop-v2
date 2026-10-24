@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from .database import current_session
 from .frequency import TIME_RE
 from .models import (
     AlertLevel,
@@ -27,6 +28,11 @@ from .repositories import (
 log = logging.getLogger("careloop.service")
 
 Clock = Callable[[], datetime]
+
+# Used when a prescription line has no readable frequency (for example "cough syrup").
+DEFAULT_DOSE_TIME = "08:00"
+# Minutes after the due time before we say "you have not taken this tablet".
+REMIND_AFTER_MINUTES = 15
 
 
 class TextGenerator(Protocol):
@@ -65,8 +71,11 @@ class CareService:
         self._appts = appointments
         self._clock = clock
         self._grace = grace_minutes
+        self._remind_after = min(REMIND_AFTER_MINUTES, grace_minutes)
         self._text = text_generator
         self._version = 0
+        # (browser session, dose id, day) already reminded, so each dose is reminded once a day
+        self._reminded: set[tuple[str | None, int, str]] = set()
 
     # ----- change tracking (drives the live dashboard) -----
     @property
@@ -101,16 +110,14 @@ class CareService:
     def add_prescription(self, items: list[PrescriptionItem]) -> int:
         """Validate every line first so a bad line never leaves a half-saved prescription.
         A dose already in the care plan (same medicine and time) is skipped, so saving twice
-        does not create duplicates."""
+        does not create duplicates. A line with no times is scheduled once a day at DEFAULT_DOSE_TIME."""
         existing = {(d.name.strip().lower(), d.time) for d in self.schedule()}
         rows: list[tuple[str, str, str, str]] = []
         for item in items:
             name = _clean(item.name, "Medicine name", 100, required=True)
             strength = _clean(item.strength, "Strength", 50)
             notes = _clean(item.instructions, "Instructions", 200)
-            if not item.times:
-                raise ValidationError(f"{name} needs at least one dose time.")
-            for t in item.times:
+            for t in (item.times or [DEFAULT_DOSE_TIME]):
                 time = _check_time(t)
                 key = (name.lower(), time)
                 if key in existing:
@@ -134,7 +141,14 @@ class CareService:
 
     def _record(self, dose: Dose, status: str) -> None:
         self._doses.log(dose.id, self._day(), status, self._hm())
+        self._resolve_reminders(dose)
         self._touch()
+
+    def _resolve_reminders(self, dose: Dose) -> None:
+        """Once a dose is taken, skipped or missed, its 'not taken yet' reminder is done."""
+        for alert in self._alerts.recent(50):
+            if alert.level == AlertLevel.REMINDER and not alert.resolved and dose.label in alert.text:
+                self._alerts.resolve(alert.id)
 
     def _due_at(self, dose: Dose) -> datetime:
         hour, minute = (int(p) for p in dose.time.split(":"))
@@ -194,21 +208,35 @@ class CareService:
         self._add_alert(AlertLevel.INFO, f"{dose.label} was skipped.")
         return Reply(True, f"Okay. I have told your caregiver about {dose.label}.", {"dose": dose.name})
 
+    def _remind(self, dose: Dose) -> None:
+        key = (current_session.get(), dose.id, self._day())
+        if key in self._reminded:
+            return
+        self._reminded.add(key)
+        food = dose.instructions.strip().lower()
+        tail = f" Take it {food}." if food.startswith(("before", "after", "with")) else ""
+        self._add_alert(
+            AlertLevel.REMINDER,
+            f'You have not taken {dose.label} yet.{tail} Please take it and tap "I took it".',
+        )
+
     def check_overdue(self) -> int:
-        """Mark doses past the grace period as missed. The second miss of a day is urgent."""
+        """Remind about doses that are late, and mark doses past the grace period as missed.
+        The second miss of a day is urgent."""
         now = self._clock()
         marked = 0
         for dose in self.schedule():
             if dose.status != DoseStatus.PENDING:
                 continue
-            hour, minute = (int(p) for p in dose.time.split(":"))
-            due = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            due = self._due_at(dose)
             if now > due + timedelta(minutes=self._grace):
                 self._record(dose, DoseStatus.MISSED)
                 missed = sum(1 for d in self.schedule() if d.status == DoseStatus.MISSED)
                 level = AlertLevel.URGENT if missed >= 2 else AlertLevel.INFO
                 self._add_alert(level, f"{dose.label} due at {dose.time} was not confirmed.")
                 marked += 1
+            elif now > due + timedelta(minutes=self._remind_after):
+                self._remind(dose)
         return marked
 
     # ----- agenda -----
@@ -287,6 +315,7 @@ class CareService:
     def reset_today(self) -> None:
         self._doses.clear()
         self._alerts.clear()
+        self._reminded.clear()
         self._touch()
 
     def seed_demo_data(self) -> None:

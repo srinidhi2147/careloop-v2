@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ log = logging.getLogger("careloop.api")
 INDEX = Path(__file__).parent / "static" / "index.html"
 ALLOWED_UPLOADS = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "application/pdf"}
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+OVERDUE_CHECK_SECONDS = 30
 
 
 class MedicationIn(BaseModel):
@@ -35,7 +37,7 @@ class MedicationIn(BaseModel):
 
 class PrescriptionLineIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    times: list[str] = Field(min_length=1, max_length=6)
+    times: list[str] = Field(default_factory=list, max_length=6)  # empty = service default time
     strength: str = Field("", max_length=50)
     instructions: str = Field("", max_length=200)
 
@@ -96,7 +98,15 @@ def create_app(
     async def events() -> StreamingResponse:
         async def stream() -> AsyncIterator[str]:
             last = -1
+            next_check = 0.0
             while True:
+                # Runs inside this browser's own session, so each browser's doses are checked.
+                if settings.auto_missed and time.monotonic() >= next_check:
+                    next_check = time.monotonic() + OVERDUE_CHECK_SECONDS
+                    try:
+                        await asyncio.to_thread(service.check_overdue)
+                    except Exception:
+                        log.exception("overdue check failed")
                 if service.version != last:
                     last = service.version
                     yield f"data: {json.dumps(service.state())}\n\n"

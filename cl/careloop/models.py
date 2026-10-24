@@ -14,6 +14,7 @@ class DoseStatus:
 class AlertLevel:
     INFO = "info"
     URGENT = "urgent"
+    REMINDER = "reminder"
 
 
 class ValidationError(ValueError):
