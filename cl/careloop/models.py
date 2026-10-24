@@ -30,6 +30,8 @@ class Dose:
     instructions: str
     status: str
     at: str
+    days: int = 0      # length of the course in days, 0 = no end date
+    day_no: int = 0    # which day of the course today is (1 = first day)
 
     @property
     def label(self) -> str:
@@ -61,6 +63,7 @@ class PrescriptionItem:
     times: list[str]
     strength: str = ""
     instructions: str = ""
+    days: int = 0
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class ExtractedMedicine:
     instructions: str
     confidence: float
     needs_review: bool
+    duration_days: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

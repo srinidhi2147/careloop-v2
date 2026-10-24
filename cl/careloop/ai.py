@@ -15,26 +15,28 @@ from .models import ExtractedMedicine
 log = logging.getLogger("careloop.ai")
 
 PROMPT = """You read medical prescriptions. Return JSON only, with no other text:
-{"medicines":[{"name":"","strength":"","frequency":"","times":[],"instructions":"","confidence":0.0}]}
+{"medicines":[{"name":"","strength":"","frequency":"","times":[],"instructions":"","duration_days":0,"confidence":0.0}]}
 Rules:
 - name is the medicine name only. Use the key "name".
 - strength includes the unit if written (for example 500 mg).
 - frequency is exactly what is written (for example 1-0-1, BD, TDS, once daily).
 - times only if explicit clock times are written, as HH:MM in 24-hour format.
+- duration_days is how many days to take it, as a whole number (5 days = 5, 1 week = 7, 2 weeks = 14). Use 0 if no duration is written.
 - confidence is 0 to 1 for how sure you are of that line.
 - Use an empty string for anything unreadable. Never guess a medicine name."""
 
 SAMPLE_OUTPUT = json.dumps({"medicines": [
     {"name": "Metformin", "strength": "500 mg", "frequency": "1-0-1", "times": [],
-     "instructions": "after food", "confidence": 0.95},
+     "instructions": "after food", "duration_days": 30, "confidence": 0.95},
     {"name": "Amlodipine", "strength": "5 mg", "frequency": "OD", "times": [],
-     "instructions": "", "confidence": 0.9},
+     "instructions": "", "duration_days": 0, "confidence": 0.9},
     {"name": "Pantoprazole", "strength": "40 mg", "frequency": "before breakfast", "times": [],
-     "instructions": "empty stomach", "confidence": 0.6},
+     "instructions": "empty stomach", "duration_days": 7, "confidence": 0.6},
 ]})
 
 _IMAGE_TYPES = {"image/png": "image/png", "image/jpeg": "image/jpeg",
                 "image/jpg": "image/jpeg", "image/webp": "image/webp"}
+_UNIT_DAYS = {"day": 1, "week": 7, "month": 30}
 
 
 class PrescriptionReader(Protocol):
@@ -44,6 +46,20 @@ class PrescriptionReader(Protocol):
 def _clean(raw: str) -> str:
     """Drop any <think> block the reasoning model may emit."""
     return re.sub(r"<think>.*?</think>", "", raw or "", flags=re.S).strip()
+
+
+def _days_from(value: Any) -> int:
+    """Course length in days from a number or text like '5 days', '1 week'. 0 = unknown."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        days = int(value)
+    else:
+        match = re.search(r"(\d+)\s*(day|week|month)?", str(value).lower())
+        if not match:
+            return 0
+        days = int(match.group(1)) * _UNIT_DAYS[match.group(2) or "day"]
+    return days if 0 < days <= 365 else 0
 
 
 def parse_model_output(raw: str) -> list[ExtractedMedicine]:
@@ -74,7 +90,8 @@ def parse_model_output(raw: str) -> list[ExtractedMedicine]:
             or times_from_text(frequency)
             or times_from_text(notes)
         )
-        log.info("read medicine %r: frequency=%r times=%s", name, frequency, times)
+        duration = _days_from(item.get("duration_days")) or _days_from(item.get("duration"))
+        log.info("read medicine %r: frequency=%r times=%s days=%s", name, frequency, times, duration)
         try:
             confidence = max(0.0, min(1.0, float(item.get("confidence", 0))))
         except (TypeError, ValueError):
@@ -87,6 +104,7 @@ def parse_model_output(raw: str) -> list[ExtractedMedicine]:
             instructions=notes,
             confidence=confidence,
             needs_review=confidence < 0.8 or not name,
+            duration_days=duration,
         ))
     return out
 

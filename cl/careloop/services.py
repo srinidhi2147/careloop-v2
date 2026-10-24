@@ -33,6 +33,7 @@ Clock = Callable[[], datetime]
 DEFAULT_DOSE_TIME = "08:00"
 # Minutes after the due time before we say "you have not taken this tablet".
 REMIND_AFTER_MINUTES = 15
+MAX_COURSE_DAYS = 365
 
 
 class TextGenerator(Protocol):
@@ -52,6 +53,13 @@ def _check_time(value: str | None) -> str:
     if not TIME_RE.fullmatch(value or ""):
         raise ValidationError("Time must be HH:MM in 24-hour format.")
     return str(value)
+
+
+def _check_days(value: int | None) -> int:
+    days = int(value or 0)
+    if not 0 <= days <= MAX_COURSE_DAYS:
+        raise ValidationError(f"Days must be between 0 and {MAX_COURSE_DAYS}.")
+    return days
 
 
 class CareService:
@@ -95,37 +103,42 @@ class CareService:
     def schedule(self) -> list[Dose]:
         return self._doses.schedule_for(self._day())
 
-    def add_medication(self, name: str, time: str, strength: str = "", instructions: str = "") -> Reply:
+    def add_medication(self, name: str, time: str, strength: str = "", instructions: str = "",
+                       days: int = 0) -> Reply:
         clean = (
             _clean(name, "Medicine name", 100, required=True),
             _check_time(time),
             _clean(strength, "Strength", 50),
             _clean(instructions, "Instructions", 200),
+            _check_days(days),
         )
-        self._meds.add(clean[0], clean[2], clean[1], clean[3])
+        self._meds.add(clean[0], clean[2], clean[1], clean[3], self._day(), clean[4])
         self._touch()
-        log.info("medication added: %s at %s", clean[0], clean[1])
+        log.info("medication added: %s at %s for %s days", clean[0], clean[1], clean[4])
         return Reply(True, f"Added {clean[0]} at {clean[1]}.")
 
     def add_prescription(self, items: list[PrescriptionItem]) -> int:
         """Validate every line first so a bad line never leaves a half-saved prescription.
         A dose already in the care plan (same medicine and time) is skipped, so saving twice
-        does not create duplicates. A line with no times is scheduled once a day at DEFAULT_DOSE_TIME."""
+        does not create duplicates. A line with no times is scheduled once a day at DEFAULT_DOSE_TIME.
+        A line with days > 0 stops after that many days."""
         existing = {(d.name.strip().lower(), d.time) for d in self.schedule()}
-        rows: list[tuple[str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, int]] = []
         for item in items:
             name = _clean(item.name, "Medicine name", 100, required=True)
             strength = _clean(item.strength, "Strength", 50)
             notes = _clean(item.instructions, "Instructions", 200)
+            days = _check_days(item.days)
             for t in (item.times or [DEFAULT_DOSE_TIME]):
                 time = _check_time(t)
                 key = (name.lower(), time)
                 if key in existing:
                     continue
                 existing.add(key)
-                rows.append((name, strength, time, notes))
-        for name, strength, time, notes in rows:
-            self._meds.add(name, strength, time, notes)
+                rows.append((name, strength, time, notes, days))
+        today = self._day()
+        for name, strength, time, notes, days in rows:
+            self._meds.add(name, strength, time, notes, today, days)
         if rows:
             self._touch()
         log.info("prescription saved: %d new dose times", len(rows))
@@ -273,10 +286,28 @@ class CareService:
         self._touch()
 
     # ----- views -----
+    @staticmethod
+    def _courses(doses: list[Dose]) -> list[dict[str, Any]]:
+        """One line per medicine: doses a day and where we are in the course."""
+        groups: dict[tuple[str, str], list[Dose]] = {}
+        for dose in doses:
+            groups.setdefault((dose.name, dose.strength), []).append(dose)
+        courses = []
+        for group in groups.values():
+            first = group[0]
+            courses.append({
+                "label": first.label,
+                "per_day": len(group),
+                "days": first.days,
+                "day_no": first.day_no,
+            })
+        return courses
+
     def state(self) -> dict[str, Any]:
         doses = self.schedule()
         return {
             "doses": [d.to_dict() for d in doses],
+            "courses": self._courses(doses),
             "alerts": [asdict(a) for a in self._alerts.recent()],
             "agenda": [asdict(a) for a in self._appts.for_day(self._day())],
             "taken": sum(1 for d in doses if d.status == DoseStatus.TAKEN),

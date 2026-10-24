@@ -9,11 +9,13 @@ class MedicationRepository:
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    def add(self, name: str, strength: str, time: str, instructions: str) -> int:
+    def add(self, name: str, strength: str, time: str, instructions: str,
+            start_day: str = "", days: int = 0) -> int:
         with self._db.connect() as conn:
             cur = conn.execute(
-                "INSERT INTO medications(name, strength, time, instructions) VALUES(?,?,?,?)",
-                (name, strength, time, instructions),
+                "INSERT INTO medications(name, strength, time, instructions, start_day, days) "
+                "VALUES(?,?,?,?,?,?)",
+                (name, strength, time, instructions, start_day, days),
             )
             return int(cur.lastrowid or 0)
 
@@ -27,15 +29,23 @@ class DoseRepository:
         self._db = db
 
     def schedule_for(self, day: str) -> list[Dose]:
+        """Doses for one day. A course with days > 0 runs from start_day for that many days."""
         sql = """SELECT m.id, m.name, m.strength, m.time, m.instructions,
-                        COALESCE(l.status, ?) AS status, COALESCE(l.at, '') AS at
+                        COALESCE(l.status, ?) AS status, COALESCE(l.at, '') AS at,
+                        m.days AS days,
+                        CASE WHEN m.start_day = '' THEN 0
+                             ELSE CAST(julianday(?) - julianday(m.start_day) AS INTEGER) + 1 END AS day_no
                  FROM medications m
                  LEFT JOIN dose_logs l ON l.med_id = m.id AND l.day = ?
-                 WHERE m.active = 1 ORDER BY m.time, m.id"""
+                 WHERE m.active = 1
+                   AND (m.start_day = '' OR m.start_day <= ?)
+                   AND (m.days = 0 OR m.start_day = ''
+                        OR date(m.start_day, '+' || m.days || ' days') > ?)
+                 ORDER BY m.time, m.id"""
         with self._db.connect() as conn:
-            rows = conn.execute(sql, (DoseStatus.PENDING, day)).fetchall()
+            rows = conn.execute(sql, (DoseStatus.PENDING, day, day, day, day)).fetchall()
         return [Dose(r["id"], r["name"], r["strength"], r["time"], r["instructions"],
-                     r["status"], r["at"]) for r in rows]
+                     r["status"], r["at"], r["days"], r["day_no"]) for r in rows]
 
     def log(self, med_id: int, day: str, status: str, at: str) -> None:
         with self._db.connect() as conn:

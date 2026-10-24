@@ -52,6 +52,9 @@ input,select{font:inherit;font-size:15px;padding:9px 11px;min-height:44px;border
 .form .grow{flex:1 1 150px}
 .err{color:var(--bad);font-size:14px;margin:8px 0 0}
 .box{margin-top:12px;padding:12px;border-radius:8px;background:var(--abg);color:var(--accent)}
+.plan{margin:10px 0 0;padding:10px 12px;border-radius:8px;background:var(--abg);color:var(--accent);font-size:15px}
+.plan b{display:block;margin-bottom:4px}
+.plan div{padding:2px 0}
 table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
 th{text-align:left;color:var(--muted);font-weight:400;padding:4px}
 td{padding:4px}
@@ -99,6 +102,7 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 <p class="muted" id="live">Connecting...</p>
 <strong id="count">0 of 0 doses taken</strong>
 <div class="bar"><i id="fill" style="width:0"></i></div>
+<div class="plan" id="plan" hidden></div>
 <div id="meds"></div>
 <div style="margin-top:14px"><strong>Alerts</strong><div id="alerts"></div></div>
 <div style="margin-top:14px"><strong>Today</strong><div id="agenda" class="muted" style="margin-top:4px"></div></div>
@@ -106,6 +110,7 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 <input class="grow" id="mname" placeholder="Medicine name" aria-label="Medicine name">
 <input id="mstr" placeholder="Strength" size="8" aria-label="Strength">
 <input type="time" id="mtime" value="18:00" aria-label="Dose time">
+<input type="number" id="mdays" min="1" max="365" placeholder="Days" style="width:84px" aria-label="Number of days">
 <button onclick="addMed()">Add medicine</button>
 </div>
 <p class="err" id="err" role="alert"></p>
@@ -193,14 +198,29 @@ function toggleMic(){
 
 /* ---------- dashboard ---------- */
 var announced={};
+function courseText(c){
+  var s=c.label+': '+c.per_day+(c.per_day===1?' dose':' doses')+' a day';
+  if(c.days>0){
+    var left=Math.max(c.days-c.day_no,0);
+    s+=', day '+c.day_no+' of '+c.days+' ('+left+(left===1?' day':' days')+' left after today)';
+  }else{s+=', no end date'}
+  return s;
+}
 function render(s){
   document.getElementById('count').textContent=s.taken+' of '+s.total+' doses taken';
   document.getElementById('fill').style.width=(s.total?s.taken/s.total*100:0)+'%';
+  var plan=document.getElementById('plan');plan.textContent='';
+  var courses=s.courses||[];
+  plan.hidden=!courses.length;
+  if(courses.length){
+    plan.appendChild(el('b','',s.total+(s.total===1?' dose':' doses')+' a day in total'));
+    courses.forEach(function(c){plan.appendChild(el('div','',courseText(c)))});
+  }
   var m=document.getElementById('meds');m.textContent='';
   s.doses.forEach(function(d){
     var r=el('div','row'),l=el('div');
     l.appendChild(el('span','',(d.name+' '+d.strength).trim()));
-    l.appendChild(el('small','',d.time+(d.instructions?' - '+d.instructions:'')+(d.at&&d.status!=='pending'?' - logged '+d.at:'')));
+    l.appendChild(el('small','',d.time+(d.instructions?' - '+d.instructions:'')+(d.days>0?' - day '+d.day_no+' of '+d.days:'')+(d.at&&d.status!=='pending'?' - logged '+d.at:'')));
     r.appendChild(l);r.appendChild(el('span','badge '+d.status,d.status));m.appendChild(r);
   });
   var a=document.getElementById('alerts');a.textContent='';
@@ -229,10 +249,11 @@ async function addMed(){
   var n=document.getElementById('mname'),e=document.getElementById('err');
   e.textContent='';
   if(!n.value.trim()){e.textContent='Enter a medicine name first.';return}
+  var days=parseInt(document.getElementById('mdays').value,10)||0;
   try{
     await api('/api/medications',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name:n.value,strength:document.getElementById('mstr').value,time:document.getElementById('mtime').value})});
-    n.value='';
+      body:JSON.stringify({name:n.value,strength:document.getElementById('mstr').value,time:document.getElementById('mtime').value,days:days})});
+    n.value='';document.getElementById('mdays').value='';
   }catch(x){e.textContent=x.message}
 }
 async function summary(){
@@ -264,7 +285,7 @@ function review(meds){
   var box=document.getElementById('rxreview');box.textContent='';
   if(!meds.length){box.appendChild(el('p','muted','No medicines found. Try a clearer photo.'));return}
   var t=el('table'),h=el('tr');
-  ['Medicine','Strength','Food'].forEach(function(x){h.appendChild(el('th','',x))});
+  ['Medicine','Strength','Days','Food'].forEach(function(x){h.appendChild(el('th','',x))});
   t.appendChild(h);
   var rows=[];
   meds.forEach(function(m){
@@ -272,6 +293,10 @@ function review(meds){
     var tr=el('tr',(m.needs_review||!food)?'check':''),ins={times:m.times||[]};
     [['name',m.name],['strength',m.strength]].forEach(function(p){
       var td=el('td'),i=el('input');i.value=p[1];i.setAttribute('aria-label',p[0]);ins[p[0]]=i;td.appendChild(i);tr.appendChild(td)});
+    var dtd=el('td'),di=el('input');
+    di.type='number';di.min='1';di.max='365';di.placeholder='no end';
+    di.value=m.duration_days>0?m.duration_days:'';
+    di.setAttribute('aria-label','Number of days');ins.days=di;dtd.appendChild(di);tr.appendChild(dtd);
     var td=el('td'),sel=el('select');sel.setAttribute('aria-label','Before or after food');
     ['Before food','After food'].forEach(function(o){var op=el('option','',o);op.value=o;sel.appendChild(op)});
     sel.value=food||'After food';
@@ -279,16 +304,19 @@ function review(meds){
     rows.push(ins);t.appendChild(tr);
   });
   box.appendChild(t);
-  box.appendChild(el('p','muted','Rows with a yellow edge need a closer look. Prescriptions can be hard to read, so confirm every line. To skip a medicine, clear its name. Medicines with no dose times on the prescription are scheduled once a day at 08:00.'));
+  box.appendChild(el('p','muted','Rows with a yellow edge need a closer look. Prescriptions can be hard to read, so confirm every line. Days is how long to take the medicine; leave it empty to repeat every day with no end. To skip a medicine, clear its name. Medicines with no dose times on the prescription are scheduled once a day at 08:00.'));
   var b=el('button','primary','Save to care plan'),err=el('p','err');err.setAttribute('role','alert');
   b.onclick=async function(){
     err.textContent='';
-    var items=[];
+    var items=[],bad=[];
     rows.forEach(function(r){
       var name=r.name.value.trim();
       if(!name)return;
-      items.push({name:name,strength:r.strength.value,instructions:r.food.value,times:r.times});
+      var raw=r.days.value.trim(),days=raw?parseInt(raw,10):0;
+      if(raw&&!(days>=1&&days<=365)){bad.push(name);return}
+      items.push({name:name,strength:r.strength.value,instructions:r.food.value,times:r.times,days:days});
     });
+    if(bad.length){err.textContent='Days must be a number from 1 to 365 for: '+bad.join(', ')+'.';return}
     if(!items.length){err.textContent='Nothing to save. Add at least one medicine name.';return}
     try{var d=await api('/api/prescription/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(items)});
       box.textContent='';box.appendChild(el('p','box',d.added?('Saved '+d.added+' dose times to the care plan.'):'Already in the care plan. Nothing new to add.'))}

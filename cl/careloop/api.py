@@ -33,6 +33,7 @@ class MedicationIn(BaseModel):
     time: str = Field(pattern=TIME_PATTERN)
     strength: str = Field("", max_length=50)
     instructions: str = Field("", max_length=200)
+    days: int = Field(0, ge=0, le=365)  # 0 = no end date
 
 
 class PrescriptionLineIn(BaseModel):
@@ -40,6 +41,7 @@ class PrescriptionLineIn(BaseModel):
     times: list[str] = Field(default_factory=list, max_length=6)  # empty = service default time
     strength: str = Field("", max_length=50)
     instructions: str = Field("", max_length=200)
+    days: int = Field(0, ge=0, le=365)  # 0 = no end date
 
 
 class AppointmentIn(BaseModel):
@@ -128,7 +130,9 @@ def create_app(
 
     @app.post("/api/medications")
     def add_medication(body: MedicationIn) -> dict[str, Any]:
-        return service.add_medication(body.name, body.time, body.strength, body.instructions).to_dict()
+        return service.add_medication(
+            body.name, body.time, body.strength, body.instructions, body.days
+        ).to_dict()
 
     @app.post("/api/appointments")
     def add_appointment(body: AppointmentIn) -> dict[str, Any]:
@@ -172,7 +176,7 @@ def create_app(
 
     @app.post("/api/prescription/confirm")
     def confirm_prescription(lines: list[PrescriptionLineIn]) -> dict[str, int]:
-        items = [PrescriptionItem(ln.name, ln.times, ln.strength, ln.instructions) for ln in lines]
+        items = [PrescriptionItem(ln.name, ln.times, ln.strength, ln.instructions, ln.days) for ln in lines]
         return {"added": service.add_prescription(items)}
 
     if mcp_app is not None:

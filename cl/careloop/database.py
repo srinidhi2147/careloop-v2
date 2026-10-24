@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS medications(
   strength TEXT NOT NULL DEFAULT '',
   time TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
-  active INTEGER NOT NULL DEFAULT 1);
+  active INTEGER NOT NULL DEFAULT 1,
+  start_day TEXT NOT NULL DEFAULT '',
+  days INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS dose_logs(
   med_id INTEGER NOT NULL REFERENCES medications(id),
   day TEXT NOT NULL,
@@ -44,6 +46,16 @@ current_session: ContextVar[str | None] = ContextVar("current_session", default=
 SESSION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns that older database files do not have yet."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(medications)")}
+    if "start_day" not in cols:
+        conn.execute("ALTER TABLE medications ADD COLUMN start_day TEXT NOT NULL DEFAULT ''")
+    if "days" not in cols:
+        conn.execute("ALTER TABLE medications ADD COLUMN days INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -64,6 +76,7 @@ class Database:
         conn.execute("PRAGMA foreign_keys = ON")
         if path != self.path:
             conn.executescript(SCHEMA)  # safe to repeat: every statement is IF NOT EXISTS
+            _migrate(conn)
         try:
             yield conn
             conn.commit()
@@ -76,3 +89,4 @@ class Database:
     def init_schema(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            _migrate(conn)
