@@ -1,6 +1,6 @@
 """SQLite access. One short-lived connection per operation keeps threads and async simple.
 
-Each browser gets its own database file (see session.py), so visitors never see each other's data.
+Each user ID gets its own database file (see session.py), so users never see each other's data.
 """
 from __future__ import annotations
 
@@ -41,9 +41,10 @@ CREATE TABLE IF NOT EXISTS alerts(
 CREATE INDEX IF NOT EXISTS idx_medications_time ON medications(time);
 """
 
-# Set per request by SessionMiddleware. None means "use the default database".
+# Set per request by SessionMiddleware from the user's care ID. None means "use the default database".
 current_session: ContextVar[str | None] = ContextVar("current_session", default=None)
-SESSION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+# A care ID is 12 characters from this alphabet (no I, L, O, 0 or 1), shown as ABCD-EFGH-JKMN.
+SESSION_ID_RE = re.compile(r"^[A-HJKMNP-Z2-9]{12}$")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:

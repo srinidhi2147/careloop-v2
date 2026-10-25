@@ -20,11 +20,10 @@ h2{font-size:20px;margin:0 0 2px}
 .msg{max-width:88%;padding:8px 12px;border-radius:10px;font-size:16px}
 .me{align-self:flex-end;background:var(--vbg);color:var(--vtx)}
 .bot{align-self:flex-start;background:var(--abg);color:var(--accent)}
-.bot.remind{background:var(--wbg);color:var(--warn);font-weight:600}
 .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 button{font:inherit;font-size:15px;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:9px 13px;min-height:44px}
 button:hover{border-color:var(--accent)}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.6;cursor:default}
 .primary{background:var(--accent);color:var(--card);border-color:var(--accent);font-weight:700}
 .danger{color:var(--bad);border-color:var(--bad)}
@@ -45,22 +44,32 @@ button:disabled{opacity:.6;cursor:default}
 .pending{background:var(--wbg);color:var(--warn)}.taken{background:var(--obg);color:var(--ok)}.missed{background:var(--bbg);color:var(--bad)}
 .alert{padding:9px 12px;border-radius:8px;margin-top:8px;font-size:15px;display:flex;justify-content:space-between;gap:8px;align-items:center}
 .urgent{background:var(--bbg);color:var(--bad)}.info{background:var(--wbg);color:var(--warn)}
-.reminder{background:var(--wbg);color:var(--warn);font-weight:600}
 .alert.done{opacity:.5;text-decoration:line-through}
-input,select{font:inherit;font-size:15px;padding:9px 11px;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);min-width:0}
+input{font:inherit;font-size:15px;padding:9px 11px;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);min-width:0}
 .form{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .form .grow{flex:1 1 150px}
 .err{color:var(--bad);font-size:14px;margin:8px 0 0}
 .box{margin-top:12px;padding:12px;border-radius:8px;background:var(--abg);color:var(--accent)}
-.plan{margin:10px 0 0;padding:10px 12px;border-radius:8px;background:var(--abg);color:var(--accent);font-size:15px}
-.plan b{display:block;margin-bottom:4px}
-.plan div{padding:2px 0}
 table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
 th{text-align:left;color:var(--muted);font-weight:400;padding:4px}
 td{padding:4px}
-td input,td select{width:100%;min-height:38px;font-size:14px}
+td input{width:100%;min-height:38px;font-size:14px}
 tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
+tr.bad td:first-child{box-shadow:inset 3px 0 var(--bad)}
 .tscroll{overflow-x:auto}
+.slots label{display:flex;align-items:center;gap:6px;font-size:14px;white-space:nowrap;padding:2px 0}
+.slots input{min-height:0;width:18px;height:18px;padding:0}
+select{font:inherit;font-size:14px;padding:9px 11px;min-height:38px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);width:100%}
+.sos{display:none;position:fixed;inset:0;z-index:100;background:#a32d2d;color:#fff;align-items:center;justify-content:center;text-align:center;padding:24px}
+.sos.on{display:flex}
+.sos h2{font-size:clamp(40px,9vw,96px);line-height:1.1;margin:0 0 16px;color:#fff}
+.sos p{font-size:clamp(20px,3.5vw,34px);margin:0 0 28px}
+.sos button{font-size:22px;min-height:56px;padding:12px 28px;background:#fff;color:#a32d2d;border-color:#fff;font-weight:700}
+@media (prefers-reduced-motion:no-preference){.sos.on{animation:sosflash 1.2s infinite}}
+@keyframes sosflash{50%{background:#7d1f1f}}
+.idbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin-top:14px;padding:12px 16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.cid{font:700 20px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.06em;color:var(--accent)}
+.idbar .btns,.idbar .form{margin:0}
 </style>
 </head>
 <body>
@@ -68,11 +77,28 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 <h1>CareLoop</h1>
 <p class="muted" style="font-size:17px;max-width:640px">The elder speaks, CareLoop answers out loud. The caregiver sees every dose live. Upload a prescription and Nemotron on Nebius builds the schedule.</p>
 
+<div class="idbar">
+<div>
+<span class="muted" style="margin:0">Your ID</span><br>
+<strong class="cid" id="cid"></strong>
+</div>
+<div class="btns">
+<button onclick="copyText(prettyId(CARE_ID),'ID copied')">Copy ID</button>
+<button onclick="copyText(location.href,'Link copied')">Copy link</button>
+<button onclick="newUser()">New user</button>
+</div>
+<div class="form">
+<input id="openid" placeholder="Open an ID, e.g. ABCD-EFGH-JKMN" size="28" aria-label="Open an existing ID">
+<button onclick="openId()">Open</button>
+</div>
+<p class="muted" id="idmsg" role="status" style="margin:0;flex-basis:100%">Each ID has its own dashboard and prescriptions. Share this ID or link with the caregiver so they see the same live dashboard. Save it: anyone with the ID can open this dashboard.</p>
+</div>
+
 <div class="grid">
 <div>
 <div class="panel">
 <h2>Elder: talk to CareLoop</h2>
-<p class="muted">Press the microphone and speak, or use the buttons. The same tools are served over MCP at /mcp, so Alexa+ or any MCP client can call them.</p>
+<p class="muted">Press the microphone and speak, or use the buttons. The same tools are served over MCP at /mcp.</p>
 <div class="chat" id="chat" aria-live="polite"></div>
 <div class="mic" id="micbox">
 <button class="primary" id="mic" onclick="toggleMic()" aria-label="Speak to CareLoop">Speak</button>
@@ -102,7 +128,6 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 <p class="muted" id="live">Connecting...</p>
 <strong id="count">0 of 0 doses taken</strong>
 <div class="bar"><i id="fill" style="width:0"></i></div>
-<div class="plan" id="plan" hidden></div>
 <div id="meds"></div>
 <div style="margin-top:14px"><strong>Alerts</strong><div id="alerts"></div></div>
 <div style="margin-top:14px"><strong>Today</strong><div id="agenda" class="muted" style="margin-top:4px"></div></div>
@@ -110,7 +135,6 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 <input class="grow" id="mname" placeholder="Medicine name" aria-label="Medicine name">
 <input id="mstr" placeholder="Strength" size="8" aria-label="Strength">
 <input type="time" id="mtime" value="18:00" aria-label="Dose time">
-<input type="number" id="mdays" min="1" max="365" placeholder="Days" style="width:84px" aria-label="Number of days">
 <button onclick="addMed()">Add medicine</button>
 </div>
 <p class="err" id="err" role="alert"></p>
@@ -123,8 +147,52 @@ tr.check td:first-child{box-shadow:inset 3px 0 var(--warn)}
 </div>
 </div>
 
+<div class="sos" id="sos" role="alertdialog" aria-live="assertive" aria-label="Help requested">
+<div>
+<h2>Help requested</h2>
+<p>Your family has been alerted. Please stay where you are.</p>
+<button id="sosbtn" onclick="closeSos()">I am okay now</button>
+</div>
+</div>
+
 <script>
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
+
+/* ---------- user ID: every user has their own dashboard and prescriptions ---------- */
+var ID_CHARS='ABCDEFGHJKMNPQRSTUVWXYZ23456789',ID_RE=/^[A-HJKMNP-Z2-9]{12}$/;
+function cleanId(s){return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
+function prettyId(id){return id.replace(/(.{4})(?=.)/g,'$1-')}
+function makeId(){
+  var out='',b=new Uint8Array(32);
+  while(out.length<12){
+    crypto.getRandomValues(b);
+    for(var i=0;i<b.length&&out.length<12;i++){if(b[i]<248)out+=ID_CHARS[b[i]%31]}
+  }
+  return out;
+}
+var CARE_ID=cleanId(new URLSearchParams(location.search).get('id')),idNote='';
+if(!ID_RE.test(CARE_ID)){
+  if(CARE_ID)idNote='That ID was not valid, so a new one was created. ';
+  CARE_ID=makeId();
+  history.replaceState(null,'','?id='+prettyId(CARE_ID));
+}
+document.getElementById('cid').textContent=prettyId(CARE_ID);
+document.title='CareLoop - '+prettyId(CARE_ID);
+if(idNote)document.getElementById('idmsg').textContent=idNote;
+function idMessage(text){document.getElementById('idmsg').textContent=text}
+function copyText(text,done){
+  var p=navigator.clipboard?navigator.clipboard.writeText(text):Promise.reject();
+  p.then(function(){idMessage(done+'.')},function(){idMessage('Copy failed. Select the text and copy it by hand.')});
+}
+function openId(){
+  var v=cleanId(document.getElementById('openid').value);
+  if(!ID_RE.test(v)){idMessage('That ID is not valid. It has 12 letters and numbers, like ABCD-EFGH-JKMN.');return}
+  location.href=location.pathname+'?id='+prettyId(v);
+}
+function newUser(){
+  if(confirm('Start a new, empty dashboard? You can come back to this one with its ID.'))location.href=location.pathname;
+}
+
 function msg(detail){
   if(typeof detail==='string')return detail;
   if(Array.isArray(detail))return detail.map(function(e){
@@ -132,6 +200,8 @@ function msg(detail){
   return detail?JSON.stringify(detail):'';
 }
 async function api(path,opt){
+  opt=opt||{};
+  opt.headers=Object.assign({'X-Care-ID':CARE_ID},opt.headers||{});
   var r=await fetch(path,opt),d={};
   try{d=await r.json()}catch(e){}
   if(!r.ok)throw new Error(msg(d.detail)||('Request failed ('+r.status+')'));
@@ -140,19 +210,37 @@ async function api(path,opt){
 
 /* ---------- chat + speech output ---------- */
 var chat=document.getElementById('chat');
-function bubble(who,text,extra){chat.appendChild(el('div','msg '+who+(extra?' '+extra:''),text));chat.scrollTop=chat.scrollHeight}
-function speak(text){
-  if(!window.speechSynthesis||!document.getElementById('speakon').checked)return;
+function bubble(who,text){chat.appendChild(el('div','msg '+who,text));chat.scrollTop=chat.scrollHeight}
+function speak(text,force){
+  if(!window.speechSynthesis||(!force&&!document.getElementById('speakon').checked))return;
   window.speechSynthesis.cancel();
   var u=new SpeechSynthesisUtterance(text);
   u.lang='en-IN';u.rate=0.9;
   window.speechSynthesis.speak(u);
 }
 function reply(text){bubble('bot',text);speak(text)}
+
+/* ---------- big help alert ---------- */
+var seen={},seenInit=false;
+function showSos(){
+  var o=document.getElementById('sos');
+  if(o.classList.contains('on'))return;
+  o.classList.add('on');
+  speak('Help requested. Your family has been alerted. Please stay where you are.',true);
+  document.getElementById('sosbtn').focus();
+}
+function closeSos(){
+  document.getElementById('sos').classList.remove('on');
+  if(window.speechSynthesis)window.speechSynthesis.cancel();
+}
+
 async function say(intent,phrase){
   bubble('me',phrase);
-  try{var d=await api('/api/voice/'+intent,{method:'POST'});reply(d.speech)}
-  catch(e){reply('Sorry, something went wrong: '+e.message)}
+  try{
+    var d=await api('/api/voice/'+intent,{method:'POST'});
+    if(intent==='help'){bubble('bot',d.speech);showSos()}
+    else reply(d.speech);
+  }catch(e){reply('Sorry, something went wrong: '+e.message)}
 }
 
 /* ---------- speech input: words to intent ---------- */
@@ -197,30 +285,14 @@ function toggleMic(){
 }
 
 /* ---------- dashboard ---------- */
-var announced={};
-function courseText(c){
-  var s=c.label+': '+c.per_day+(c.per_day===1?' dose':' doses')+' a day';
-  if(c.days>0){
-    var left=Math.max(c.days-c.day_no,0);
-    s+=', day '+c.day_no+' of '+c.days+' ('+left+(left===1?' day':' days')+' left after today)';
-  }else{s+=', no end date'}
-  return s;
-}
 function render(s){
   document.getElementById('count').textContent=s.taken+' of '+s.total+' doses taken';
   document.getElementById('fill').style.width=(s.total?s.taken/s.total*100:0)+'%';
-  var plan=document.getElementById('plan');plan.textContent='';
-  var courses=s.courses||[];
-  plan.hidden=!courses.length;
-  if(courses.length){
-    plan.appendChild(el('b','',s.total+(s.total===1?' dose':' doses')+' a day in total'));
-    courses.forEach(function(c){plan.appendChild(el('div','',courseText(c)))});
-  }
   var m=document.getElementById('meds');m.textContent='';
   s.doses.forEach(function(d){
     var r=el('div','row'),l=el('div');
     l.appendChild(el('span','',(d.name+' '+d.strength).trim()));
-    l.appendChild(el('small','',d.time+(d.instructions?' - '+d.instructions:'')+(d.days>0?' - day '+d.day_no+' of '+d.days:'')+(d.at&&d.status!=='pending'?' - logged '+d.at:'')));
+    l.appendChild(el('small','',d.time+(d.instructions?' - '+d.instructions:'')+(d.at&&d.status!=='pending'?' - logged '+d.at:'')));
     r.appendChild(l);r.appendChild(el('span','badge '+d.status,d.status));m.appendChild(r);
   });
   var a=document.getElementById('alerts');a.textContent='';
@@ -231,16 +303,14 @@ function render(s){
     d.appendChild(el('span','',x.at+' - '+x.text));
     if(!x.resolved){var b=el('button','','Done');b.onclick=function(){api('/api/alerts/'+x.id+'/resolve',{method:'POST'})};d.appendChild(b)}
     a.appendChild(d);
-    /* "You have not taken this tablet": tell the elder in the chat and read it aloud, once */
-    if(x.level==='reminder'&&!x.resolved&&!announced[x.id]){
-      announced[x.id]=true;
-      bubble('bot',x.text,'remind');speak(x.text);
-    }
   });
   document.getElementById('agenda').textContent=s.agenda.map(function(x){return x.time+' '+x.title}).join('  |  ');
+  var urgent=s.alerts.filter(function(x){return x.level==='urgent'&&!x.resolved&&/help/i.test(x.text)});
+  if(!seenInit){urgent.forEach(function(x){seen[x.id]=1});seenInit=true}
+  else urgent.forEach(function(x){if(!seen[x.id]){seen[x.id]=1;showSos()}});
 }
 function connect(){
-  var es=new EventSource('/api/events');
+  var es=new EventSource('/api/events?id='+CARE_ID);
   es.onopen=function(){document.getElementById('live').textContent='Live: updates appear instantly.'};
   es.onmessage=function(e){render(JSON.parse(e.data))};
   es.onerror=function(){document.getElementById('live').textContent='Reconnecting...'};
@@ -249,11 +319,10 @@ async function addMed(){
   var n=document.getElementById('mname'),e=document.getElementById('err');
   e.textContent='';
   if(!n.value.trim()){e.textContent='Enter a medicine name first.';return}
-  var days=parseInt(document.getElementById('mdays').value,10)||0;
   try{
     await api('/api/medications',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name:n.value,strength:document.getElementById('mstr').value,time:document.getElementById('mtime').value,days:days})});
-    n.value='';document.getElementById('mdays').value='';
+      body:JSON.stringify({name:n.value,strength:document.getElementById('mstr').value,time:document.getElementById('mtime').value})});
+    n.value='';
   }catch(x){e.textContent=x.message}
 }
 async function summary(){
@@ -275,49 +344,64 @@ async function readRx(){
   }catch(x){e.textContent=x.message}
   btn.disabled=false;btn.textContent='Read prescription';
 }
-function foodOf(text){
+var SLOTS=[
+  {key:'Morning',def:'08:00',test:function(h){return h<12}},
+  {key:'Afternoon',def:'14:00',test:function(h){return h>=12&&h<18}},
+  {key:'Night',def:'21:00',test:function(h){return h>=18}}
+];
+var FOOD=['','Before food','After food','With food','Empty stomach'];
+function foodFor(text){
   var t=(text||'').toLowerCase();
-  if(/before|empty stomach/.test(t))return 'Before food';
-  if(/after|with (food|meal)|post/.test(t))return 'After food';
+  if(t.indexOf('before')>=0)return 'Before food';
+  if(t.indexOf('after')>=0)return 'After food';
+  if(t.indexOf('with')>=0)return 'With food';
+  if(t.indexOf('empty')>=0)return 'Empty stomach';
   return '';
 }
 function review(meds){
   var box=document.getElementById('rxreview');box.textContent='';
   if(!meds.length){box.appendChild(el('p','muted','No medicines found. Try a clearer photo.'));return}
   var t=el('table'),h=el('tr');
-  ['Medicine','Strength','Days','Food'].forEach(function(x){h.appendChild(el('th','',x))});
+  ['Medicine','Strength','When to take','Food'].forEach(function(x){h.appendChild(el('th','',x))});
   t.appendChild(h);
   var rows=[];
   meds.forEach(function(m){
-    var food=foodOf(m.instructions);
-    var tr=el('tr',(m.needs_review||!food)?'check':''),ins={times:m.times||[]};
+    var tr=el('tr',m.needs_review?'check':''),r={tr:tr};
     [['name',m.name],['strength',m.strength]].forEach(function(p){
-      var td=el('td'),i=el('input');i.value=p[1];i.setAttribute('aria-label',p[0]);ins[p[0]]=i;td.appendChild(i);tr.appendChild(td)});
-    var dtd=el('td'),di=el('input');
-    di.type='number';di.min='1';di.max='365';di.placeholder='no end';
-    di.value=m.duration_days>0?m.duration_days:'';
-    di.setAttribute('aria-label','Number of days');ins.days=di;dtd.appendChild(di);tr.appendChild(dtd);
-    var td=el('td'),sel=el('select');sel.setAttribute('aria-label','Before or after food');
-    ['Before food','After food'].forEach(function(o){var op=el('option','',o);op.value=o;sel.appendChild(op)});
-    sel.value=food||'After food';
-    ins.food=sel;td.appendChild(sel);tr.appendChild(td);
-    rows.push(ins);t.appendChild(tr);
+      var td=el('td'),i=el('input');i.value=p[1];i.setAttribute('aria-label',p[0]);r[p[0]]=i;td.appendChild(i);tr.appendChild(td)});
+    var tdw=el('td','slots');r.boxes=[];
+    SLOTS.forEach(function(s){
+      var at=(m.times||[]).filter(function(x){return s.test(parseInt(x.split(':')[0],10))})[0];
+      var lab=el('label'),cb=document.createElement('input');
+      cb.type='checkbox';cb.checked=!!at;cb.value=at||s.def;
+      lab.appendChild(cb);lab.appendChild(document.createTextNode(s.key));
+      tdw.appendChild(lab);r.boxes.push(cb);
+    });
+    tr.appendChild(tdw);
+    var tdf=el('td'),sel=document.createElement('select'),cur=foodFor(m.instructions),opts=FOOD.slice();
+    if(m.instructions&&!cur){opts.push(m.instructions);cur=m.instructions}
+    opts.forEach(function(o){
+      var op=document.createElement('option');op.value=o;op.textContent=o||'No food note';
+      if(o===cur)op.selected=true;sel.appendChild(op)});
+    sel.setAttribute('aria-label','Food');r.food=sel;tdf.appendChild(sel);tr.appendChild(tdf);
+    rows.push(r);t.appendChild(tr);
   });
   box.appendChild(t);
-  box.appendChild(el('p','muted','Rows with a yellow edge need a closer look. Prescriptions can be hard to read, so confirm every line. Days is how long to take the medicine; leave it empty to repeat every day with no end. To skip a medicine, clear its name. Medicines with no dose times on the prescription are scheduled once a day at 08:00.'));
+  box.appendChild(el('p','muted','Tick when each medicine is taken and choose the food note. Rows with a yellow edge need a closer look, and a red edge means no time is ticked. Prescriptions can be hard to read, so confirm every line. To skip a medicine, clear its name.'));
   var b=el('button','primary','Save to care plan'),err=el('p','err');err.setAttribute('role','alert');
   b.onclick=async function(){
     err.textContent='';
     var items=[],bad=[];
     rows.forEach(function(r){
+      r.tr.classList.remove('bad');
       var name=r.name.value.trim();
       if(!name)return;
-      var raw=r.days.value.trim(),days=raw?parseInt(raw,10):0;
-      if(raw&&!(days>=1&&days<=365)){bad.push(name);return}
-      items.push({name:name,strength:r.strength.value,instructions:r.food.value,times:r.times,days:days});
+      var times=r.boxes.filter(function(c){return c.checked}).map(function(c){return c.value});
+      if(!times.length){r.tr.classList.add('bad');bad.push(name);return}
+      items.push({name:name,strength:r.strength.value,instructions:r.food.value,times:times});
     });
-    if(bad.length){err.textContent='Days must be a number from 1 to 365 for: '+bad.join(', ')+'.';return}
-    if(!items.length){err.textContent='Nothing to save. Add at least one medicine name.';return}
+    if(bad.length){err.textContent='Tick when to take: '+bad.join(', ')+'.';return}
+    if(!items.length){err.textContent='Nothing to save. Add at least one medicine with a time.';return}
     try{var d=await api('/api/prescription/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(items)});
       box.textContent='';box.appendChild(el('p','box',d.added?('Saved '+d.added+' dose times to the care plan.'):'Already in the care plan. Nothing new to add.'))}
     catch(x){err.textContent=x.message}
